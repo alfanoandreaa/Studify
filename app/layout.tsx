@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { InteractionFixes } from "@/components/interaction-fixes";
 
 export const metadata: Metadata = {
   title: "Quaderno AI",
@@ -17,7 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="it" suppressHydrationWarning>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><InteractionFixes />{children}</body>
     </html>
   );
 }
