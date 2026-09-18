@@ -256,7 +256,7 @@ export default function Home() {
       <aside className={"sidebar " + (mobileMenu ? "sidebar-open" : "")}>
         <div className="brand-row">
           <button className="brand" onClick={newNotebook} aria-label="Pagina iniziale">
-            <span className="brand-mark"><BookOpen /></span><span>Quaderno <b>AI</b></span>
+            <span className="brand-mark"><BookOpen /></span><span><b>Studify</b></span>
           </button>
           <Button className="mobile-close" variant="ghost" size="icon" onClick={() => setMobileMenu(false)} aria-label="Chiudi menu"><X /></Button>
         </div>
@@ -320,7 +320,7 @@ export default function Home() {
       <main className="main-area">
         <div className="mobile-toolbar">
           <Button className="menu-button" variant="ghost" size="icon" onClick={() => setMobileMenu(true)} aria-label="Apri menu"><Menu /></Button>
-          <b>{activePack?.title || "Quaderno AI"}</b>
+          <b>{activePack?.title || "Studify"}</b>
         </div>
 
         {activePack ? <StudyWorkspace key={activePack.id} pack={activePack} folders={folders} onBack={newNotebook} onDelete={() => removePack(activePack.id)} onUpdate={(changes) => updatePack(activePack.id, changes)} /> : (
