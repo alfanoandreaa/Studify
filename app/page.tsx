@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight,
-  FileText, Folder, FolderPlus, GraduationCap, Layers3, Menu,
+  Copy, FileText, Folder, FolderPlus, GraduationCap, Layers3, Menu,
   MessageCircle, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Sparkles,
   Trash2, UploadCloud, X
 } from "lucide-react";
@@ -365,6 +365,7 @@ function StudyWorkspace({ pack, folders, onBack, onDelete, onUpdate }: { pack: S
   const [organizeOpen, setOrganizeOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pack.title);
   const [draftFolder, setDraftFolder] = useState(pack.folderId || "none");
+  const [notesCopied, setNotesCopied] = useState(false);
   const score = pack.quiz.reduce((total, item, index) => total + (answers[index] === item.correctIndex ? 1 : 0), 0);
   const progress = submitted && pack.quiz.length ? Math.round(score / pack.quiz.length * 100) : 0;
   const currentFolder = folders.find((folder) => folder.id === pack.folderId);
@@ -374,6 +375,18 @@ function StudyWorkspace({ pack, folders, onBack, onDelete, onUpdate }: { pack: S
     if (!title) return toast.error("Il nome degli appunti non può essere vuoto.");
     onUpdate({ title, folderId: draftFolder === "none" ? undefined : draftFolder });
     setOrganizeOpen(false); toast.success("Appunti aggiornati.");
+  }
+
+  async function copyCorrectedNotes() {
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard non disponibile");
+      await navigator.clipboard.writeText(pack.correctedNotes);
+      setNotesCopied(true);
+      toast.success("Appunti copiati.");
+      window.setTimeout(() => setNotesCopied(false), 1800);
+    } catch {
+      toast.error("Non è stato possibile copiare gli appunti.");
+    }
   }
 
   async function sendQuestion() {
@@ -441,7 +454,15 @@ function StudyWorkspace({ pack, folders, onBack, onDelete, onUpdate }: { pack: S
           <div className="prose-notes">{pack.summary}</div>
           {!!pack.keyConcepts.length && <><div className="section-rule" /><h3>Concetti chiave</h3><div className="concept-grid">{pack.keyConcepts.map((item) => <article key={item.term}><b>{item.term}</b><p>{item.explanation}</p></article>)}</div></>}
         </TabsContent>
-        <TabsContent value="notes" className="study-panel"><PanelTitle icon={<FileText />} tone="blue" title="Appunti corretti e riordinati" subtitle="Errori, formule e calcoli vengono controllati prima di organizzare il testo." />{pack.noteSections?.length ? <StructuredNotes sections={pack.noteSections} /> : <FormattedNotes text={pack.correctedNotes} />}</TabsContent>
+        <TabsContent value="notes" className="study-panel">
+          <div className="panel-heading-row">
+            <PanelTitle icon={<FileText />} tone="blue" title="Appunti corretti e riordinati" subtitle="Errori, formule e calcoli vengono controllati prima di organizzare il testo." />
+            <Button variant="outline" size="sm" onClick={() => void copyCorrectedNotes()} aria-label="Copia gli appunti corretti">
+              {notesCopied ? <><Check /> Copiati</> : <><Copy /> Copia</>}
+            </Button>
+          </div>
+          {pack.noteSections?.length ? <StructuredNotes sections={pack.noteSections} /> : <FormattedNotes text={pack.correctedNotes} />}
+        </TabsContent>
         <TabsContent value="flashcards" className="study-panel">
           <PanelTitle icon={<Layers3 />} tone="orange" title="Flashcard" subtitle="Tocca una carta per vedere la risposta." />
           <div className="flashcard-grid">{pack.flashcards.map((card, index) => <button key={index} className={"flashcard " + (flipped === index ? "flipped" : "")} onClick={() => setFlipped(flipped === index ? null : index)}><small>{flipped === index ? "RISPOSTA" : "DOMANDA"}</small><p>{flipped === index ? card.back : card.front}</p><span>{flipped === index ? <RotateCcw /> : <ChevronRight />}</span></button>)}</div>
