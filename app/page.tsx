@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight,
   Copy, FileText, Folder, FolderPlus, GraduationCap, Layers3, Menu,
-  MessageCircle, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Sparkles,
+  LogOut, MessageCircle, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Sparkles,
   Trash2, UploadCloud, X
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { supabase } from "@/app/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -104,6 +106,7 @@ function fileToBase64(file: File) {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [packs, setPacks] = useState<StudyPack[]>([]);
   const [folders, setFolders] = useState<StudyFolder[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -119,30 +122,60 @@ export default function Home() {
   const [folderToRename, setFolderToRename] = useState<StudyFolder | null>(null);
   const [renamedFolderName, setRenamedFolderName] = useState("");
   const [folderToDelete, setFolderToDelete] = useState<StudyFolder | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [userId, setUserId] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const activePack = useMemo(() => packs.find((pack) => pack.id === activeId) || null, [packs, activeId]);
 
   useEffect(() => {
+    let mounted = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      if (!data.session) return router.replace("/login");
+      setUserId(data.session.user.id);
+      setUserEmail(data.session.user.email || "Studente");
+      setAuthReady(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) { setAuthReady(false); router.replace("/login"); }
+    });
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
+  }, [router]);
+
+  useEffect(() => {
+    if (!userId) return;
+    setStorageReady(false);
+    const userPacksKey = `${STORAGE_KEY}:${userId}`;
+    const userFoldersKey = `${FOLDERS_KEY}:${userId}`;
     try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      const savedPacks = localStorage.getItem(userPacksKey);
+      const savedFolders = localStorage.getItem(userFoldersKey);
+      const legacyPacks = localStorage.getItem(STORAGE_KEY);
+      const legacyFolders = localStorage.getItem(FOLDERS_KEY);
+      const stored = JSON.parse(savedPacks || legacyPacks || "[]");
       setPacks(Array.isArray(stored) ? stored : []);
-      const storedFolders = JSON.parse(localStorage.getItem(FOLDERS_KEY) || "[]");
+      const storedFolders = JSON.parse(savedFolders || legacyFolders || "[]");
       setFolders(Array.isArray(storedFolders) ? storedFolders : []);
-    } catch { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(FOLDERS_KEY); }
+      if (!savedPacks && legacyPacks) localStorage.setItem(userPacksKey, legacyPacks);
+      if (!savedFolders && legacyFolders) localStorage.setItem(userFoldersKey, legacyFolders);
+    } catch { localStorage.removeItem(userPacksKey); localStorage.removeItem(userFoldersKey); }
     finally { setStorageReady(true); }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (!storageReady) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(packs)); }
+    if (!userId) return;
+    try { localStorage.setItem(`${STORAGE_KEY}:${userId}`, JSON.stringify(packs)); }
     catch { toast.error("Lo spazio del browser è pieno. Elimina un vecchio quaderno e riprova."); }
-  }, [packs, storageReady]);
+  }, [packs, storageReady, userId]);
 
   useEffect(() => {
     if (!storageReady) return;
-    try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); }
+    if (!userId) return;
+    try { localStorage.setItem(`${FOLDERS_KEY}:${userId}`, JSON.stringify(folders)); }
     catch { toast.error("Non è stato possibile salvare le cartelle."); }
-  }, [folders, storageReady]);
+  }, [folders, storageReady, userId]);
 
   useEffect(() => {
     if (!loading) { setLoadingPhrase(0); return; }
@@ -242,6 +275,14 @@ export default function Home() {
     setPacks((current) => current.map((pack) => pack.id === id ? { ...pack, ...changes } : pack));
   }
 
+  async function signOut() {
+    await supabase.auth.signOut();
+    setPacks([]); setFolders([]); setActiveId(null);
+    router.replace("/login");
+  }
+
+  if (!authReady || !storageReady) return <main className="auth-page"><section className="auth-callback"><span className="spinner auth-page-spinner" /><p>Caricamento di Studify…</p></section></main>;
+
   const unfiledPacks = packs.filter((pack) => !pack.folderId || !folders.some((folder) => folder.id === pack.folderId));
 
   function notebookLink(pack: StudyPack) {
@@ -312,7 +353,7 @@ export default function Home() {
           </AlertDialogContent>
         </AlertDialog>
         <div className="sidebar-footer">
-          <div className="profile-chip"><span>A</span><div><b>Il mio spazio</b><small>Studente</small></div></div>
+          <div className="profile-chip"><span>{userEmail.charAt(0).toUpperCase()}</span><div><b>Il mio spazio</b><small>{userEmail}</small></div><Button variant="ghost" size="icon-sm" onClick={() => void signOut()} aria-label="Esci dall’account"><LogOut /></Button></div>
         </div>
       </aside>
       {mobileMenu && <button className="sidebar-scrim" onClick={() => setMobileMenu(false)} aria-label="Chiudi menu" />}
