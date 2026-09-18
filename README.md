@@ -1,4 +1,8 @@
-# vinext-starter
+# Studify
+
+Studify trasforma appunti, documenti e immagini in materiale di studio organizzato: appunti corretti, riassunti, concetti chiave, flashcard e quiz personalizzati.
+
+## Sviluppo
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
 
