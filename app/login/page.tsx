@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Apple, ArrowRight, BookOpen, LoaderCircle, Mail } from "lucide-react";
+import { ArrowRight, BookOpen, LoaderCircle, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/app/lib/supabase";
 
@@ -54,10 +54,10 @@ export default function LoginPage() {
     } finally { setLoading(null); }
   }
 
-  async function handleOAuth(provider: "google" | "apple") {
-    setLoading(provider); setError(""); setMessage("");
+  async function handleGoogle() {
+    setLoading("google"); setError(""); setMessage("");
     const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider,
+      provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
     if (authError) {
@@ -76,13 +76,9 @@ export default function LoginPage() {
         </div>
 
         <div className="auth-socials">
-          <button type="button" onClick={() => void handleOAuth("google")} disabled={!!loading}>
-            {loading === "google" ? <LoaderCircle className="auth-spin" /> : <span className="google-mark">G</span>}
+          <button type="button" onClick={() => void handleGoogle()} disabled={!!loading}>
+            {loading === "google" ? <LoaderCircle className="auth-spin" /> : <img src="/google.svg" alt="" />}
             Continua con Google
-          </button>
-          <button type="button" onClick={() => void handleOAuth("apple")} disabled={!!loading}>
-            {loading === "apple" ? <LoaderCircle className="auth-spin" /> : <Apple />}
-            Continua con Apple
           </button>
         </div>
 
