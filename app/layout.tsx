@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { InteractionFixes } from "@/components/interaction-fixes";
 
 export const metadata: Metadata = {
-  title: "Quaderno AI",
-  description: "Trasforma i tuoi appunti in riassunti, flashcard e quiz personalizzati.",
+  title: "Studify",
+  description: "Trasforma i tuoi appunti in materiale di studio chiaro, flashcard e quiz personalizzati.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -18,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="it" suppressHydrationWarning>
-      <body className="antialiased"><InteractionFixes />{children}</body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
