@@ -78,6 +78,22 @@ function dateLabel(value: string) {
   return new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "short" }).format(new Date(value));
 }
 
+function notesForClipboard(pack: StudyPack) {
+  if (pack.noteSections?.length) {
+    return pack.noteSections.map((section) => [
+      section.title,
+      ...section.blocks.map((block) => block.kind === "formula"
+        ? `Formula: ${block.content.replace(/^\**formula\**\s*:?\s*/i, "")}`
+        : `• ${block.content}`)
+    ].join("\n")).join("\n\n");
+  }
+
+  return pack.correctedNotes
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/^FORMULA\s*:?\s*/gim, "Formula: ");
+}
+
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -380,7 +396,7 @@ function StudyWorkspace({ pack, folders, onBack, onDelete, onUpdate }: { pack: S
   async function copyCorrectedNotes() {
     try {
       if (!navigator.clipboard) throw new Error("Clipboard non disponibile");
-      await navigator.clipboard.writeText(pack.correctedNotes);
+      await navigator.clipboard.writeText(notesForClipboard(pack));
       setNotesCopied(true);
       toast.success("Appunti copiati.");
       window.setTimeout(() => setNotesCopied(false), 1800);
