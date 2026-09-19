@@ -17,6 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="it" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: "try{document.documentElement.dataset.theme=localStorage.getItem('studify-theme')==='light'?'light':'dark'}catch(e){document.documentElement.dataset.theme='dark'}" }} /></head>
       <body className="antialiased">{children}</body>
     </html>
   );

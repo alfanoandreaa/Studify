@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight,
+  ArrowLeft, BookOpen, Check, ChevronRight,
   Copy, FileText, Folder, FolderPlus, GraduationCap, Layers3, Menu,
-  LogOut, MessageCircle, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Sparkles,
+  LogOut, MessageCircle, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Settings2, PanelLeftClose, PanelLeftOpen, Sparkles,
   Trash2, UploadCloud, X
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeToggle } from "@/app/components/theme-toggle";
 
 type StudyPack = {
   id: string; title: string; subject: string; createdAt: string; sourceName: string;
@@ -44,6 +45,8 @@ type StudyFolder = { id: string; name: string };
 type ChatMessage = { role: "user" | "assistant"; text: string };
 const STORAGE_KEY = "quaderno-ai-packs-v1";
 const FOLDERS_KEY = "quaderno-ai-folders-v1";
+const AVATAR_KEY = "studify-avatar-v1";
+const SIDEBAR_KEY = "studify-sidebar-collapsed";
 type QuizSize = 5 | 10 | 20;
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const ACCEPTED_FILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain"]);
@@ -105,6 +108,31 @@ function fileToBase64(file: File) {
   });
 }
 
+function prepareAvatar(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!(["image/jpeg", "image/png", "image/webp"].includes(file.type)) || file.size > 5 * 1024 * 1024) {
+      reject(new Error("Scegli un'immagine JPG, PNG o WEBP di massimo 5 MB.")); return;
+    }
+    const reader = new FileReader();
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 256; canvas.height = 256;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Impossibile preparare l'immagine.");
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        context.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      } catch (error) { reject(error); }
+    };
+    img.onerror = () => reject(new Error("Immagine non leggibile."));
+    reader.onload = () => { img.src = String(reader.result || ""); };
+    reader.onerror = () => reject(new Error("Impossibile leggere l'immagine."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const router = useRouter();
   const [packs, setPacks] = useState<StudyPack[]>([]);
@@ -116,6 +144,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingPhrase, setLoadingPhrase] = useState(0);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [storageReady, setStorageReady] = useState(false);
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -125,18 +156,33 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [userId, setUserId] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState("");
+  const accountDeletionBusy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const avatarInput = useRef<HTMLInputElement>(null);
   const activePack = useMemo(() => packs.find((pack) => pack.id === activeId) || null, [packs, activeId]);
 
   useEffect(() => {
     let mounted = true;
-    void supabase.auth.getSession().then(({ data }) => {
+    void supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
       if (!data.session) return router.replace("/login");
+      const { data: verified, error } = await supabase.auth.getUser();
+      if (!mounted) return;
+      if (!verified.user) {
+        if (error && error.status !== 401 && error.status !== 403 && error.code !== "user_not_found" && error.code !== "session_not_found") { toast.error("Servizio di accesso temporaneamente non disponibile. Riprova tra poco."); router.replace("/login"); return; }
+        localStorage.removeItem(`${STORAGE_KEY}:${data.session.user.id}`);
+        localStorage.removeItem(`${FOLDERS_KEY}:${data.session.user.id}`);
+        await supabase.auth.signOut({ scope: "local" });
+        router.replace("/login"); return;
+      }
       setUserId(data.session.user.id);
       setUserEmail(data.session.user.email || "Studente");
       setAuthReady(true);
-    });
+    }).catch(() => { if (mounted) { toast.error("Connessione non riuscita. Riprova ad accedere."); router.replace("/login"); } });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) { setAuthReady(false); router.replace("/login"); }
     });
@@ -144,21 +190,23 @@ export default function Home() {
   }, [router]);
 
   useEffect(() => {
+    try { setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true"); } catch {}
+  }, []);
+
+  useEffect(() => {
     if (!userId) return;
     setStorageReady(false);
+    try { setAvatar(localStorage.getItem(`${AVATAR_KEY}:${userId}`)); } catch { setAvatar(null); }
     const userPacksKey = `${STORAGE_KEY}:${userId}`;
     const userFoldersKey = `${FOLDERS_KEY}:${userId}`;
     try {
       const savedPacks = localStorage.getItem(userPacksKey);
       const savedFolders = localStorage.getItem(userFoldersKey);
-      const legacyPacks = localStorage.getItem(STORAGE_KEY);
-      const legacyFolders = localStorage.getItem(FOLDERS_KEY);
-      const stored = JSON.parse(savedPacks || legacyPacks || "[]");
+      // Unowned legacy data must never be imported into a different/new account.
+      const stored = JSON.parse(savedPacks || "[]");
       setPacks(Array.isArray(stored) ? stored : []);
-      const storedFolders = JSON.parse(savedFolders || legacyFolders || "[]");
+      const storedFolders = JSON.parse(savedFolders || "[]");
       setFolders(Array.isArray(storedFolders) ? storedFolders : []);
-      if (!savedPacks && legacyPacks) localStorage.setItem(userPacksKey, legacyPacks);
-      if (!savedFolders && legacyFolders) localStorage.setItem(userFoldersKey, legacyFolders);
     } catch { localStorage.removeItem(userPacksKey); localStorage.removeItem(userFoldersKey); }
     finally { setStorageReady(true); }
   }, [userId]);
@@ -185,6 +233,31 @@ export default function Home() {
 
   function newNotebook() {
     setActiveId(null); setNotes(""); setFile(null); setMobileMenu(false);
+  }
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch {}
+      return next;
+    });
+  }
+
+  async function chooseAvatar(file: File | undefined) {
+    if (!file || !userId) return;
+    try {
+      const image = await prepareAvatar(file);
+      localStorage.setItem(`${AVATAR_KEY}:${userId}`, image);
+      setAvatar(image);
+      toast.success("Foto profilo aggiornata.");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Impossibile salvare la foto."); }
+    finally { if (avatarInput.current) avatarInput.current.value = ""; }
+  }
+
+  function removeAvatar() {
+    try { localStorage.removeItem(`${AVATAR_KEY}:${userId}`); } catch {}
+    setAvatar(null);
+    toast.success("Foto profilo rimossa.");
   }
 
   function selectFile(nextFile: File | null) {
@@ -276,9 +349,42 @@ export default function Home() {
   }
 
   async function signOut() {
+    setStorageReady(false);
     await supabase.auth.signOut();
-    setPacks([]); setFolders([]); setActiveId(null);
+    setPacks([]); setFolders([]); setActiveId(null); setAvatar(null); setSettingsOpen(false);
     router.replace("/login");
+  }
+
+  async function deleteOwnAccount() {
+    if (deleteConfirmation !== "ELIMINA" || accountDeletionBusy.current) return;
+    accountDeletionBusy.current = true;
+    setDeletingAccount(true); setDeleteAccountError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || session.user.id !== userId) throw new Error("Sessione scaduta. Accedi di nuovo.");
+      const response = await fetch("/api/account", {
+        method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ confirmation: deleteConfirmation }),
+      });
+      const result = await response.json() as { deleted?: boolean; error?: string };
+      if (!response.ok || result?.deleted !== true) throw new Error(typeof result?.error === "string" ? result.error : "Eliminazione non riuscita.");
+      setStorageReady(false);
+      let cleared = true;
+      try {
+        localStorage.removeItem(`${STORAGE_KEY}:${userId}`);
+        localStorage.removeItem(`${FOLDERS_KEY}:${userId}`);
+        localStorage.removeItem(`${AVATAR_KEY}:${userId}`);
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(FOLDERS_KEY);
+      } catch { cleared = false; }
+      await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      setPacks([]); setFolders([]); setActiveId(null); setAvatar(null); setAuthReady(false);
+      const next = new URL("/login", window.location.origin);
+      next.searchParams.set("deleted", cleared ? "success" : "local-cleanup-needed");
+      window.location.replace(next.pathname + next.search);
+    } catch (error) {
+      setDeleteAccountError(error instanceof Error ? error.message : "Eliminazione non riuscita. Riprova.");
+    } finally { accountDeletionBusy.current = false; setDeletingAccount(false); }
   }
 
   if (!authReady || !storageReady) return <main className="auth-page"><section className="auth-callback"><span className="spinner auth-page-spinner" /><p>Caricamento di Studify…</p></section></main>;
@@ -292,16 +398,18 @@ export default function Home() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={"app-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
       <Toaster position="top-center" richColors />
       <aside className={"sidebar " + (mobileMenu ? "sidebar-open" : "")}>
         <div className="brand-row">
           <button className="brand" onClick={newNotebook} aria-label="Pagina iniziale">
             <span className="brand-mark"><BookOpen /></span><span><b>Studify</b></span>
           </button>
+          <Button className="desktop-sidebar-toggle" variant="ghost" size="icon-sm" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Espandi barra laterale" : "Riduci barra laterale"} title={sidebarCollapsed ? "Espandi barra laterale" : "Riduci barra laterale"} aria-expanded={!sidebarCollapsed}>{sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
           <Button className="mobile-close" variant="ghost" size="icon" onClick={() => setMobileMenu(false)} aria-label="Chiudi menu"><X /></Button>
         </div>
-        <Button className="new-note" onClick={newNotebook}><Plus /> Nuovi appunti</Button>
+        <Button className="new-note" onClick={newNotebook} aria-label="Nuovi appunti" title={sidebarCollapsed ? "Nuovi appunti" : undefined}><Plus /><span>Nuovi appunti</span></Button>
+        <button className="collapsed-folders" onClick={toggleSidebar} aria-label="Mostra cartelle e appunti" title="Mostra cartelle e appunti"><Folder /></button>
         <div className="sidebar-section">
           <div className="sidebar-section-heading">
             <p className="eyebrow">Cartelle</p>
@@ -353,7 +461,36 @@ export default function Home() {
           </AlertDialogContent>
         </AlertDialog>
         <div className="sidebar-footer">
-          <div className="profile-chip"><span>{userEmail.charAt(0).toUpperCase()}</span><div><b>Il mio spazio</b><small>{userEmail}</small></div><Button variant="ghost" size="icon-sm" onClick={() => void signOut()} aria-label="Esci dall’account"><LogOut /></Button></div>
+          <Button className="settings-open" variant="ghost" onClick={() => { setMobileMenu(false); setSettingsOpen(true); }} aria-label="Impostazioni" title={sidebarCollapsed ? "Impostazioni" : undefined}><Settings2 /><span>Impostazioni</span></Button>
+          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <DialogContent className="settings-dialog">
+              <DialogHeader><DialogTitle>Impostazioni</DialogTitle><DialogDescription>Personalizza Studify e gestisci il tuo account.</DialogDescription></DialogHeader>
+              <div className="settings-content">
+                <section className="settings-group"><h3>Aspetto</h3><ThemeToggle /></section>
+                <section className="settings-group"><h3>Foto profilo</h3>
+                  <div className="settings-avatar-row"><span className="avatar-preview">{avatar ? <img src={avatar} alt="Foto profilo" /> : userEmail.charAt(0).toUpperCase()}</span><div><b>{userEmail}</b><small>La foto è salvata in questo browser, solo per questo account.</small></div></div>
+                  <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void chooseAvatar(event.target.files?.[0])} />
+                  <div className="settings-actions"><Button variant="outline" onClick={() => avatarInput.current?.click()}>Scegli immagine</Button><Button variant="ghost" onClick={removeAvatar} disabled={!avatar}>Rimuovi immagine</Button></div>
+                </section>
+                <section className="settings-group"><h3>Account</h3><Button variant="outline" onClick={() => void signOut()}><LogOut />Esci dall’account</Button><Button variant="destructive" onClick={() => { setSettingsOpen(false); setDeleteConfirmation(""); setDeleteAccountError(""); setDeleteAccountOpen(true); }}><Trash2 />Elimina account</Button></section>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <AlertDialog open={deleteAccountOpen} onOpenChange={(open) => { if (!deletingAccount) setDeleteAccountOpen(open); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Eliminare definitivamente il tuo account?</AlertDialogTitle>
+                <AlertDialogDescription>L’account {userEmail} verrà eliminato da Studify e le sessioni verranno revocate. Gli appunti e le cartelle di questo account salvati in questo browser saranno rimossi. Le copie su altri dispositivi e i file esportati non possono essere cancellati da qui. L’operazione non è annullabile. Prima salva ciò che vuoi conservare.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <label className="dialog-field"><span>Scrivi ELIMINA per confermare</span><Input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} disabled={deletingAccount} autoComplete="off" /></label>
+              {deleteAccountError && <p className="auth-message error" role="alert">{deleteAccountError}</p>}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deletingAccount}>Annulla</AlertDialogCancel>
+                <Button variant="destructive" disabled={deletingAccount || deleteConfirmation !== "ELIMINA"} onClick={() => void deleteOwnAccount()}>{deletingAccount ? "Eliminazione…" : "Elimina definitivamente"}</Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <div className="profile-chip"><span className="profile-avatar">{avatar ? <img src={avatar} alt="" /> : userEmail.charAt(0).toUpperCase()}</span><div><b>Il mio spazio</b><small>{userEmail}</small></div></div>
         </div>
       </aside>
       {mobileMenu && <button className="sidebar-scrim" onClick={() => setMobileMenu(false)} aria-label="Chiudi menu" />}
@@ -388,7 +525,6 @@ export default function Home() {
                 </div>
               </div>
               <div className="composer-footer">
-                <span><BrainCircuit /> L’AI userà solo il materiale che invii</span>
                 <Button size="lg" onClick={() => void analyze()} disabled={loading || (!notes.trim() && !file)}>
                   {loading ? <><span className="spinner" /> <span className="loading-copy" key={loadingPhrase}>{LOADING_PHRASES[loadingPhrase]}…</span></> : <><Sparkles /> Crea materiale di studio</>}
                 </Button>
