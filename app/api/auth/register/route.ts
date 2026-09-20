@@ -14,10 +14,15 @@ export async function POST(request: Request) {
   if (!sameOrigin(request)) return reply({ error: "Origine non autorizzata." }, 403);
   if (!request.headers.get("content-type")?.includes("application/json")) return reply({ error: "Richiesta non valida." }, 400);
 
+  const clientIp = clientIpKey(request);
+  if (!clientIp) {
+    return reply({ error: "Servizio di registrazione temporaneamente non disponibile." }, 503);
+  }
+
   try {
     const rate = await checkRateLimits([{
       scope: "register-hour",
-      identifier: clientIpKey(request),
+      identifier: clientIp,
       limit: 8,
       windowSeconds: 60 * 60,
     }]);
