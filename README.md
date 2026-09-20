@@ -6,6 +6,8 @@ Studify trasforma appunti, immagini, PDF e file di testo in materiale di studio 
 
 Quaderni, cartelle e foto profilo sono salvati nel `localStorage` del browser. Non vengono sincronizzati tra dispositivi e possono andare persi cancellando i dati del sito o cambiando browser/dispositivo.
 
+Le anteprime della foto profilo usano intenzionalmente `<img>`: la sorgente è un data URL generato dall'utente, quindi `next/image` non aggiunge ottimizzazione utile e cambierebbe il rendering.
+
 ## Variabili d'ambiente
 
 Copia `.env.example` in un file env locale e configura:
