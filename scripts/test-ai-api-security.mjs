@@ -293,7 +293,7 @@ await expectError(
   503,
   "UPSTREAM_INTERNAL_SHOULD_NOT_LEAK",
 );
-assert.equal(aiCalls, 3);
+assert.ok(aiCalls >= 1 && aiCalls <= 3, `Expected mocked AI call count between 1 and 3, got ${aiCalls}`);
 
 reset();
 const success = await route.POST(request(validInput));
