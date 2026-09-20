@@ -1,4 +1,6 @@
 "use client";
+/* Profile images are tiny browser-local data URLs, not CDN assets. */
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -72,9 +74,11 @@ async function readApiResponse(response: Response) {
 }
 
 async function fetchAi(body: Record<string, unknown>) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Sessione scaduta. Accedi di nuovo.");
   return fetch("/api/gemini", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify(body)
   });
 }
@@ -190,13 +194,13 @@ export default function Home() {
   }, [router]);
 
   useEffect(() => {
-    try { setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true"); } catch {}
+    try { const saved = localStorage.getItem(SIDEBAR_KEY) === "true"; queueMicrotask(() => setSidebarCollapsed(saved)); } catch {}
   }, []);
 
   useEffect(() => {
     if (!userId) return;
-    setStorageReady(false);
-    try { setAvatar(localStorage.getItem(`${AVATAR_KEY}:${userId}`)); } catch { setAvatar(null); }
+    let savedAvatar: string | null = null;
+    try { savedAvatar = localStorage.getItem(`${AVATAR_KEY}:${userId}`); } catch {}
     const userPacksKey = `${STORAGE_KEY}:${userId}`;
     const userFoldersKey = `${FOLDERS_KEY}:${userId}`;
     try {
@@ -204,11 +208,9 @@ export default function Home() {
       const savedFolders = localStorage.getItem(userFoldersKey);
       // Unowned legacy data must never be imported into a different/new account.
       const stored = JSON.parse(savedPacks || "[]");
-      setPacks(Array.isArray(stored) ? stored : []);
       const storedFolders = JSON.parse(savedFolders || "[]");
-      setFolders(Array.isArray(storedFolders) ? storedFolders : []);
-    } catch { localStorage.removeItem(userPacksKey); localStorage.removeItem(userFoldersKey); }
-    finally { setStorageReady(true); }
+      queueMicrotask(() => { setAvatar(savedAvatar); setPacks(Array.isArray(stored) ? stored : []); setFolders(Array.isArray(storedFolders) ? storedFolders : []); setStorageReady(true); });
+    } catch { localStorage.removeItem(userPacksKey); localStorage.removeItem(userFoldersKey); queueMicrotask(() => { setPacks([]); setFolders([]); setStorageReady(true); }); }
   }, [userId]);
 
   useEffect(() => {
@@ -226,7 +228,7 @@ export default function Home() {
   }, [folders, storageReady, userId]);
 
   useEffect(() => {
-    if (!loading) { setLoadingPhrase(0); return; }
+    if (!loading) return;
     const timer = window.setInterval(() => setLoadingPhrase((current) => (current + 1) % LOADING_PHRASES.length), 1800);
     return () => window.clearInterval(timer);
   }, [loading]);
@@ -273,6 +275,7 @@ export default function Home() {
     if (!inputText.trim() && !file) return toast.error("Aggiungi del testo o carica un file.");
     if (inputText.trim() && file) return toast.error("Scegli soltanto un file oppure il testo.");
     if (file && file.size > MAX_FILE_SIZE) return toast.error("Il file supera il limite di 8 MB.");
+    setLoadingPhrase(0);
     setLoading(true);
     try {
       const encodedFile = file ? { name: file.name, mimeType: file.type || "application/octet-stream", data: await fileToBase64(file) } : undefined;
@@ -491,6 +494,7 @@ export default function Home() {
             </AlertDialogContent>
           </AlertDialog>
           <div className="profile-chip"><span className="profile-avatar">{avatar ? <img src={avatar} alt="" /> : userEmail.charAt(0).toUpperCase()}</span><div><b>Il mio spazio</b><small>{userEmail}</small></div></div>
+          <nav className="legal-links" aria-label="Informazioni legali"><a href="/informazioni">Info</a><a href="/privacy">Privacy</a><a href="/termini">Termini</a></nav>
         </div>
       </aside>
       {mobileMenu && <button className="sidebar-scrim" onClick={() => setMobileMenu(false)} aria-label="Chiudi menu" />}

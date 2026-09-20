@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/app/lib/supabase";
 import { exchangeAuthCode } from "@/app/lib/auth-callback";
 
 export default function AuthCallbackPage() {

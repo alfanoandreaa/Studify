@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /informazioni
+Disallow: /login
+Disallow: /auth/
+Disallow: /api/
+Disallow: /privacy
+Disallow: /termini
+Disallow: /
+Sitemap: https://studify.pmxno9868721081uuj91.chatgpt.site/sitemap.xml

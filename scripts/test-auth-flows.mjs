@@ -49,6 +49,7 @@ const registration = moduleAt('app/api/auth/register/route.ts', {
 });
 const deletion = moduleAt('app/api/account/route.ts', {
   '@supabase/supabase-js': { createClient: () => admin },
+  '@/app/lib/site-config': { SUPABASE_URL: origin, sameOrigin: request => request.headers.get('origin') === new URL(request.url).origin },
 }, { process: { env: { SUPABASE_SECRET_KEY: 'mock' } } });
 function page(path, search = '') {
   const slots = []; let cursor = 0, tree, effects = [], initial = true;

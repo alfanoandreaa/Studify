@@ -1,0 +1,8 @@
+# Studify
+
+Studify è una web app italiana per organizzare appunti scolastici, generare flashcard e quiz.
+Gli appunti e le cartelle sono salvati nel browser dell'utente. I contenuti inviati per l'analisi sono elaborati da un fornitore AI.
+
+- Informazioni: https://studify.pmxno9868721081uuj91.chatgpt.site/informazioni
+- Privacy (bozza): https://studify.pmxno9868721081uuj91.chatgpt.site/privacy
+- Termini (bozza): https://studify.pmxno9868721081uuj91.chatgpt.site/termini

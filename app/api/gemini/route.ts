@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { sameOrigin, SUPABASE_URL } from "@/app/lib/site-config";
 
 export const runtime = "edge";
 const STUDY_MODEL = "gemini-3.7-flash";
@@ -18,6 +20,47 @@ function classifySource(text: unknown, fileData: unknown): SourceTier {
 }
 
 class AiUnavailableError extends Error {}
+class InvalidInputError extends Error {}
+const MAX_BODY_BYTES = 12 * 1024 * 1024;
+const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain"]);
+const bursts = new Map<string, { count: number; expires: number }>();
+
+function fileIsValid(file: { data?: unknown; mimeType?: unknown }) {
+  if (typeof file.data !== "string" || typeof file.mimeType !== "string" || !ALLOWED_MIME.has(file.mimeType)) return false;
+  if (file.data.length > 11_200_000 || file.data.length < 8 || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.data)) return false;
+  // Inspect file signatures before forwarding the upload to the AI provider.
+  let prefix: string;
+  try {
+    prefix = atob(file.data.slice(0, 64));
+  } catch {
+    return false;
+  }
+  if (file.mimeType === "application/pdf") return prefix.startsWith("%PDF-");
+  if (file.mimeType === "image/png") return prefix.startsWith("\x89PNG\r\n\x1a\n");
+  if (file.mimeType === "image/jpeg") return prefix.startsWith("\xff\xd8\xff");
+  if (file.mimeType === "image/webp") return prefix.startsWith("RIFF") && prefix.slice(8, 12) === "WEBP";
+  return !prefix.includes("\0");
+}
+
+async function readLimitedBody(request: Request) {
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > MAX_BODY_BYTES) throw new InvalidInputError("Il materiale supera il limite di 8 MB.");
+  if (!request.body) throw new InvalidInputError("Richiesta vuota.");
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let content = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY_BYTES) throw new InvalidInputError("Il materiale supera il limite di 8 MB.");
+      content += decoder.decode(value, { stream: true });
+    }
+    return content + decoder.decode();
+  } finally { reader.releaseLock(); }
+}
 
 function endpointFor(model: string) {
   return "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
@@ -78,7 +121,21 @@ export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "La nostra AI non è ancora configurata." }, { status: 503 });
   try {
-    const body = await request.json() as {
+    if (!sameOrigin(request)) throw new InvalidInputError("Origine non autorizzata.");
+    if (!request.headers.get("content-type")?.startsWith("application/json")) throw new InvalidInputError("Richiesta non valida.");
+    const token = request.headers.get("authorization")?.match(/^Bearer (\S+)$/)?.[1];
+    if (!token) return NextResponse.json({ error: "Accedi per usare la nostra AI." }, { status: 401 });
+    const auth = createClient(SUPABASE_URL, "sb_publishable_ITuNYxbjhH84r8s3kftaLA_o-txrLXZ", { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: { user }, error: authError } = await auth.auth.getUser(token);
+    if (authError || !user) return NextResponse.json({ error: "Sessione scaduta. Accedi di nuovo." }, { status: 401 });
+    const now = Date.now();
+    for (const [key, item] of bursts) if (item.expires < now) bursts.delete(key);
+    const limitKey = user.id;
+    const burst = bursts.get(limitKey) ?? { count: 0, expires: now + 60_000 };
+    if (++burst.count > 8 || bursts.size > 10_000) return NextResponse.json({ error: "Troppe richieste. Attendi un minuto." }, { status: 429 });
+    bursts.set(limitKey, burst);
+    const raw = await readLimitedBody(request);
+    const body = JSON.parse(raw) as {
       mode?: unknown;
       quizCount?: unknown;
       message?: unknown;
@@ -87,6 +144,12 @@ export async function POST(request: NextRequest) {
       file?: { data?: unknown; mimeType?: unknown };
       draft?: unknown;
     };
+    if (!body || typeof body !== "object" || Object.keys(body).some(key => !["mode", "quizCount", "message", "context", "text", "file", "draft"].includes(key))) throw new InvalidInputError("Richiesta non valida.");
+    if (body.mode !== "chat" && body.mode !== "quiz" && body.mode !== "verify" && body.mode !== "analyze") throw new InvalidInputError("Modalità non valida.");
+    if (body.file !== undefined && (!body.file || typeof body.file !== "object" || !fileIsValid(body.file))) throw new InvalidInputError("File non valido o non supportato.");
+    if (typeof body.text === "string" && body.text.length > 150_000) throw new InvalidInputError("Testo troppo lungo.");
+    if (typeof body.context === "string" && body.context.length > 140_000) throw new InvalidInputError("Appunti troppo lunghi.");
+    if (typeof body.message === "string" && body.message.length > 4_000) throw new InvalidInputError("Domanda troppo lunga.");
     const isChat = body.mode === "chat";
     const isQuiz = body.mode === "quiz";
     const isVerify = body.mode === "verify";
@@ -172,7 +235,8 @@ Genera inoltre un titolo breve, la materia, un riassunto completo ma conciso, da
         const geminiResponse = await fetch(endpointFor(selectedModel), {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-          body: requestBody
+          body: requestBody,
+          signal: AbortSignal.timeout(45_000)
         });
 
         const result = await geminiResponse.json() as { error?: { message?: string }; candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
@@ -182,7 +246,7 @@ Genera inoltre un titolo breve, la materia, un riassunto completo ma conciso, da
           lastError = "La risposta ricevuta era vuota.";
         } else {
           lastError = result.error?.message || lastError;
-          console.warn("AI model rejected request", { model: selectedModel, status: geminiResponse.status, reason: lastError.slice(0, 300) });
+          console.warn("AI model rejected request", { model: selectedModel, status: geminiResponse.status });
           const canRetry = [408, 429, 500, 502, 503, 504, 529].includes(geminiResponse.status)
             || /high demand|overloaded|temporarily unavailable|deadline|timeout|resource exhausted/i.test(lastError);
           if (geminiResponse.status === 404 && attemptIndex < 2) {
@@ -194,7 +258,7 @@ Genera inoltre un titolo breve, la materia, un riassunto completo ma conciso, da
       } catch (error) {
         if (error instanceof Error && !/fetch|network|timeout|deadline/i.test(error.message)) throw error;
         lastError = error instanceof Error ? error.message : lastError;
-        console.warn("AI model request failed", { model: selectedModel, reason: lastError.slice(0, 300) });
+        console.warn("AI model request failed", { model: selectedModel });
       }
 
       if (attemptIndex < modelAttempts.length - 1) {
@@ -220,7 +284,8 @@ Genera inoltre un titolo breve, la materia, un riassunto completo ma conciso, da
     }).join("\n\n");
     return NextResponse.json({ ...parsed, correctedNotes });
   } catch (error) {
-    const status = error instanceof AiUnavailableError ? 503 : 500;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Errore durante l’analisi." }, { status });
+    const status = error instanceof InvalidInputError && /limite/.test(error.message) ? 413 : error instanceof InvalidInputError || error instanceof SyntaxError ? 400 : error instanceof AiUnavailableError ? 503 : 502;
+    const message = error instanceof InvalidInputError ? error.message : status === 400 ? "Richiesta non valida." : "Il servizio AI non è disponibile. Riprova tra poco.";
+    return NextResponse.json({ error: message }, { status });
   }
 }

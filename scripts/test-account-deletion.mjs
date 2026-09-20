@@ -10,7 +10,7 @@ let calls, config;
 const exports = {};
 vm.runInNewContext(compiled, {
   exports, Response, Date, process: { env: { SUPABASE_SECRET_KEY: 'mock-secret' } },
-  require: () => ({ sendAccountMail: async () => 'not_configured', createClient: () => ({ auth: {
+  require: name => name === '@/app/lib/site-config' ? { SUPABASE_URL: 'https://example.invalid', sameOrigin: request => request.headers.get('origin') === new URL(request.url).origin } : ({ createClient: () => ({ auth: {
     getUser: async () => { calls.push('verify'); return config.user || { data: { user: { id: 'signed-in-user', last_sign_in_at: new Date().toISOString() } }, error: null }; },
     admin: {
       signOut: async () => { calls.push('revoke'); return { error: config.logoutError || null }; },

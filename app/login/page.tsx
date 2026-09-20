@@ -43,8 +43,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     const deletion = new URLSearchParams(window.location.search).get("deleted");
-    if (deletion === "success") setMessage("Account eliminato. Puoi registrarti di nuovo, anche con la stessa email.");
-    if (deletion === "local-cleanup-needed") setMessage("Account eliminato. Per rimuovere anche i dati locali, cancella i dati di questo sito nelle impostazioni del browser.");
+    if (deletion === "success") queueMicrotask(() => setMessage("Account eliminato. Puoi registrarti di nuovo, anche con la stessa email."));
+    if (deletion === "local-cleanup-needed") queueMicrotask(() => setMessage("Account eliminato. Per rimuovere anche i dati locali, cancella i dati di questo sito nelle impostazioni del browser."));
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) router.replace("/");
     }).catch(() => setError("Impossibile verificare la sessione. Riprova ad accedere."));
@@ -117,6 +117,7 @@ export default function LoginPage() {
         </form>
         <p className="auth-switch">{mode === "login" ? "Non hai un account?" : "Hai già un account?"}<button type="button" disabled={!!loading} onClick={() => changeMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Registrati" : "Accedi"}</button></p>
         <div className="auth-theme"><ThemeToggle /></div>
+        <nav className="legal-links" aria-label="Informazioni legali"><a href="/informazioni">Come funziona</a><a href="/privacy">Privacy</a><a href="/termini">Termini</a></nav>
       </section>
     </main>
   );

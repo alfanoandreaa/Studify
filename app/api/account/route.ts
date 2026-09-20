@@ -1,12 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+import { sameOrigin, SUPABASE_URL } from "@/app/lib/site-config";
 
 export const runtime = "edge";
-const url = "https://rdxfhjjhvdztchwbqgea.supabase.co";
 const reply = (error: string, status: number) => Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function DELETE(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin !== "https://studify.pmxno9868721081uuj91.chatgpt.site") return reply("Origine non autorizzata.", 403);
+  if (!sameOrigin(request)) return reply("Origine non autorizzata.", 403);
   const authorization = request.headers.get("authorization") || "";
   if (!authorization.startsWith("Bearer ") || authorization.length < 8) return reply("Accedi di nuovo per eliminare l’account.", 401);
   if (!request.headers.get("content-type")?.includes("application/json")) return reply("Richiesta non valida.", 400);
@@ -15,7 +14,7 @@ export async function DELETE(request: Request) {
   if (!body || typeof body !== "object" || !("confirmation" in body) || body.confirmation !== "ELIMINA") return reply("Conferma l’eliminazione scrivendo ELIMINA.", 400);
   const secret = process.env.SUPABASE_SECRET_KEY;
   if (!secret) return reply("Eliminazione non disponibile. Contatta l’assistenza.", 503);
-  const admin = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  const admin = createClient(SUPABASE_URL, secret, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
   const token = authorization.slice(7);
   try {
     // Resolve the target exclusively from the token, never from a client-supplied ID.

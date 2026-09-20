@@ -9,7 +9,7 @@ export function ThemeToggle() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
-    setLight(document.documentElement.dataset.theme === "light");
+    queueMicrotask(() => setLight(document.documentElement.dataset.theme === "light"));
   }, []);
 
   function toggle() {
