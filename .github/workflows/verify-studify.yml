@@ -22,3 +22,9 @@ jobs:
       - run: pnpm lint
         continue-on-error: true
       - run: pnpm build
+      - run: node scripts/test-auth-flows.mjs
+        env:
+          APP_ORIGIN: https://studify.test
+      - run: node scripts/test-account-deletion.mjs
+        env:
+          APP_ORIGIN: https://studify.test
