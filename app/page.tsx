@@ -207,30 +207,44 @@ export default function Home() {
   }, [router]);
 
   useEffect(() => {
-    try { setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true"); } catch {}
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      try { setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true"); } catch {}
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!userId) return;
-    setStorageReady(false);
-    try { setAvatar(localStorage.getItem(`${AVATAR_KEY}:${userId}`)); } catch { setAvatar(null); }
-    const userPacksKey = `${STORAGE_KEY}:${userId}`;
-    const userFoldersKey = `${FOLDERS_KEY}:${userId}`;
-    try {
-      migrateLocalStorageKey(STORAGE_KEY, LEGACY_STORAGE_KEY);
-      migrateLocalStorageKey(FOLDERS_KEY, LEGACY_FOLDERS_KEY);
-      migrateLocalStorageKey(userPacksKey, `${LEGACY_STORAGE_KEY}:${userId}`);
-      migrateLocalStorageKey(userFoldersKey, `${LEGACY_FOLDERS_KEY}:${userId}`);
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setStorageReady(false);
+      try { setAvatar(localStorage.getItem(`${AVATAR_KEY}:${userId}`)); } catch { setAvatar(null); }
+      const userPacksKey = `${STORAGE_KEY}:${userId}`;
+      const userFoldersKey = `${FOLDERS_KEY}:${userId}`;
+      try {
+        migrateLocalStorageKey(STORAGE_KEY, LEGACY_STORAGE_KEY);
+        migrateLocalStorageKey(FOLDERS_KEY, LEGACY_FOLDERS_KEY);
+        migrateLocalStorageKey(userPacksKey, `${LEGACY_STORAGE_KEY}:${userId}`);
+        migrateLocalStorageKey(userFoldersKey, `${LEGACY_FOLDERS_KEY}:${userId}`);
 
-      const savedPacks = localStorage.getItem(userPacksKey);
-      const savedFolders = localStorage.getItem(userFoldersKey);
-      // Unowned legacy data must never be imported into a different/new account.
-      const stored = JSON.parse(savedPacks || "[]");
-      setPacks(Array.isArray(stored) ? stored : []);
-      const storedFolders = JSON.parse(savedFolders || "[]");
-      setFolders(Array.isArray(storedFolders) ? storedFolders : []);
-    } catch { localStorage.removeItem(userPacksKey); localStorage.removeItem(userFoldersKey); }
-    finally { setStorageReady(true); }
+        const savedPacks = localStorage.getItem(userPacksKey);
+        const savedFolders = localStorage.getItem(userFoldersKey);
+        // Unowned legacy data must never be imported into a different/new account.
+        const stored = JSON.parse(savedPacks || "[]");
+        if (!cancelled) setPacks(Array.isArray(stored) ? stored : []);
+        const storedFolders = JSON.parse(savedFolders || "[]");
+        if (!cancelled) setFolders(Array.isArray(storedFolders) ? storedFolders : []);
+      } catch {
+        localStorage.removeItem(userPacksKey);
+        localStorage.removeItem(userFoldersKey);
+      } finally {
+        if (!cancelled) setStorageReady(true);
+      }
+    });
+    return () => { cancelled = true; };
   }, [userId]);
 
   useEffect(() => {
@@ -248,7 +262,13 @@ export default function Home() {
   }, [folders, storageReady, userId]);
 
   useEffect(() => {
-    if (!loading) { setLoadingPhrase(0); return; }
+    if (!loading) {
+      let cancelled = false;
+      void Promise.resolve().then(() => {
+        if (!cancelled) setLoadingPhrase(0);
+      });
+      return () => { cancelled = true; };
+    }
     const timer = window.setInterval(() => setLoadingPhrase((current) => (current + 1) % LOADING_PHRASES.length), 1800);
     return () => window.clearInterval(timer);
   }, [loading]);
