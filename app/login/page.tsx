@@ -35,12 +35,20 @@ export default function LoginPage() {
   }
 
   useEffect(() => {
-    const deletion = new URLSearchParams(window.location.search).get("deleted");
-    if (deletion === "success") setMessage("Account eliminato. Puoi registrarti di nuovo, anche con la stessa email.");
-    if (deletion === "local-cleanup-needed") setMessage("Account eliminato. Per rimuovere anche i dati locali, cancella i dati di questo sito nelle impostazioni del browser.");
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/");
-    }).catch(() => setError("Impossibile verificare la sessione. Riprova ad accedere."));
+    let cancelled = false;
+    void Promise.resolve().then(async () => {
+      if (cancelled) return;
+      const deletion = new URLSearchParams(window.location.search).get("deleted");
+      if (deletion === "success") setMessage("Account eliminato. Puoi registrarti di nuovo, anche con la stessa email.");
+      if (deletion === "local-cleanup-needed") setMessage("Account eliminato. Per rimuovere anche i dati locali, cancella i dati di questo sito nelle impostazioni del browser.");
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!cancelled && data.session) router.replace("/");
+      } catch {
+        if (!cancelled) setError("Impossibile verificare la sessione. Riprova ad accedere.");
+      }
+    });
+    return () => { cancelled = true; };
   }, [router]);
 
   async function run(action: string, operation: () => Promise<void>) {
