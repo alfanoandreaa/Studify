@@ -49,16 +49,22 @@ export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimit
 
     if (Math.random() < 0.01) {
       const cutoff = now - 2 * 24 * 60 * 60;
-      waitUntil(
-        db.prepare("DELETE FROM rate_limits WHERE window_start < ?")
-          .bind(cutoff)
-          .run()
-          .catch((error) => {
-            console.warn("Studify rate limit cleanup failed", {
-              errorName: error instanceof Error ? error.name : "unknown",
-            });
-          }),
-      );
+      try {
+        waitUntil(
+          db.prepare("DELETE FROM rate_limits WHERE window_start < ?")
+            .bind(cutoff)
+            .run()
+            .catch((error) => {
+              console.warn("Studify rate limit cleanup failed", {
+                errorName: error instanceof Error ? error.name : "unknown",
+              });
+            }),
+        );
+      } catch (error) {
+        console.warn("Studify rate limit cleanup failed", {
+          errorName: error instanceof Error ? error.name : "unknown",
+        });
+      }
     }
 
     for (let index = 0; index < rules.length; index++) {
