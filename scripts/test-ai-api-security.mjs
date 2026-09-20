@@ -28,6 +28,9 @@ function moduleAt(path, dependencies, extra = {}) {
   }).outputText;
   vm.runInNewContext(code, {
     exports,
+    // Share the host Error constructors so errors thrown by mocked host functions pass instanceof checks inside the VM.
+    Error,
+    TypeError,
     Response,
     Request,
     URL,
@@ -293,7 +296,7 @@ await expectError(
   503,
   "UPSTREAM_INTERNAL_SHOULD_NOT_LEAK",
 );
-assert.ok(aiCalls >= 1 && aiCalls <= 3, `Expected mocked AI call count between 1 and 3, got ${aiCalls}`);
+assert.equal(aiCalls, 3);
 
 reset();
 const success = await route.POST(request(validInput));
