@@ -9,8 +9,8 @@ import { ThemeToggle } from "@/app/components/theme-toggle";
 
 function friendlyError(message: string) {
   const value = message.toLowerCase();
-  if (value.includes("invalid login credentials")) return "Password non corretta. Controlla i dati e riprova.";
-  if (value.includes("email not confirmed")) return "Questo account è ancora in attesa di conferma. Contatta l’assistenza.";
+  if (value.includes("invalid login credentials")) return "Email o password errati.";
+  if (value.includes("email not confirmed")) return "Conferma la tua email dal link ricevuto prima di accedere.";
   if (value.includes("rate limit") || value.includes("security purposes")) return "Troppe richieste. Attendi qualche minuto prima di riprovare.";
   if (value.includes("signups not allowed") || value.includes("email provider is disabled")) return "La registrazione non è disponibile al momento. Riprova più tardi.";
   if (value.includes("password")) return "Controlla la password. Per registrarti deve rispettare tutti i requisiti indicati.";
@@ -29,25 +29,26 @@ export default function LoginPage() {
   const busy = useRef(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [notFound, setNotFound] = useState(false);
   const duplicateMessage = "Questa email è già registrata. Accedi con la tua password.";
   function changeMode(next: "login" | "signup") {
-    setMode(next); setConfirmation(""); setError(""); setMessage(""); setNotFound(false);
-  }
-  async function accountExists() {
-    const response = await fetch("/api/auth/account-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
-    const result = await response.json() as { exists?: boolean };
-    if (!response.ok || typeof result.exists !== "boolean") throw new Error("network");
-    return result.exists as boolean;
+    setMode(next); setConfirmation(""); setError(""); setMessage("");
   }
 
   useEffect(() => {
-    const deletion = new URLSearchParams(window.location.search).get("deleted");
-    if (deletion === "success") setMessage("Account eliminato. Puoi registrarti di nuovo, anche con la stessa email.");
-    if (deletion === "local-cleanup-needed") setMessage("Account eliminato. Per rimuovere anche i dati locali, cancella i dati di questo sito nelle impostazioni del browser.");
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/");
-    }).catch(() => setError("Impossibile verificare la sessione. Riprova ad accedere."));
+    let cancelled = false;
+    void Promise.resolve().then(async () => {
+      if (cancelled) return;
+      const deletion = new URLSearchParams(window.location.search).get("deleted");
+      if (deletion === "success") setMessage("Account eliminato. Puoi registrarti di nuovo, anche con la stessa email.");
+      if (deletion === "local-cleanup-needed") setMessage("Account eliminato. Per rimuovere anche i dati locali, cancella i dati di questo sito nelle impostazioni del browser.");
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!cancelled && data.session) router.replace("/");
+      } catch {
+        if (!cancelled) setError("Impossibile verificare la sessione. Riprova ad accedere.");
+      }
+    });
+    return () => { cancelled = true; };
   }, [router]);
 
   async function run(action: string, operation: () => Promise<void>) {
@@ -64,19 +65,12 @@ export default function LoginPage() {
       setError("Completa i requisiti e inserisci due password uguali."); return;
     }
     await run("email", async () => {
-      setNotFound(false);
       if (mode === "login") {
         const { data, error: failure } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (failure) {
-          if (failure.code === "invalid_credentials" || failure.message.includes("Invalid login credentials")) {
-            if (!(await accountExists())) { setError("Account non trovato"); setNotFound(true); return; }
-          }
-          throw failure;
-        }
+        if (failure) throw failure;
         if (!data.session) throw new Error("Missing session");
         router.replace("/");
       } else {
-        if (await accountExists()) { setError(duplicateMessage); return; }
         const response = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim(), password }) });
         if (response.status === 409) { setError(duplicateMessage); return; }
         if (!response.ok) {
@@ -84,10 +78,8 @@ export default function LoginPage() {
           throw new Error(result.error || "network");
         }
         setPassword(""); setConfirmation("");
-        const { data, error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (!loginError && data.session) { router.replace("/"); return; }
         setMode("login");
-        setMessage("Account creato. Accedi con la password che hai scelto.");
+        setMessage("Controlla la tua email e conferma l’indirizzo dal link ricevuto, poi accedi.");
       }
     });
   }
@@ -98,7 +90,7 @@ export default function LoginPage() {
         <div className="auth-brand"><span><BookOpen /></span><b>Studify</b></div>
         <div className="auth-heading">
           <h1 id="auth-title">{mode === "login" ? "Bentornato" : "Crea il tuo account"}</h1>
-          <p>{mode === "signup" ? "Crea un account con email e password, senza conferma via email." : "Accedi con email e password."}</p>
+          <p>{mode === "signup" ? "Crea un account con email e password. Riceverai un link di conferma." : "Accedi con email e password."}</p>
         </div>
         <form className="auth-form" onSubmit={(event) => void handleEmail(event)} aria-busy={!!loading}>
           <label><span>Email</span><div><input type="email" autoComplete="email" required disabled={!!loading} value={email} onChange={(event) => { setEmail(event.target.value); setMessage(""); setError(""); }} placeholder="nome@esempio.it" /></div></label>
@@ -109,9 +101,8 @@ export default function LoginPage() {
             {!!confirmation && password !== confirmation && <p className="auth-message error">Le password non coincidono.</p>}
           </>}
           {error && <p className="auth-message error" role="alert">{error}</p>}
-          {notFound && <button type="button" onClick={() => changeMode("signup")}>Registrati</button>}
           {mode === "signup" && error === duplicateMessage && <div className="auth-help-actions"><button type="button" onClick={() => changeMode("login")}>Accedi</button></div>}
-          {mode === "signup" && <p className="auth-password-note">Conserva la password: senza email di recupero non potrai reimpostarla.</p>}
+          {mode === "signup" && <p className="auth-password-note">Dopo la registrazione dovrai confermare l’indirizzo email prima di accedere.</p>}
           {message && <p className="auth-message success" role="status">{message}</p>}
           <button className="auth-submit" type="submit" disabled={!!loading}>{loading === "email" ? <><LoaderCircle className="auth-spin" />Attendi…</> : mode === "login" ? "Accedi" : "Registrati"}</button>
         </form>

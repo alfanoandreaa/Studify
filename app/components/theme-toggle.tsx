@@ -9,7 +9,11 @@ export function ThemeToggle() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
-    setLight(document.documentElement.dataset.theme === "light");
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) setLight(document.documentElement.dataset.theme === "light");
+    });
+    return () => { cancelled = true; };
   }, []);
 
   function toggle() {

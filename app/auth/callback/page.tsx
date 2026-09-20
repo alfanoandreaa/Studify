@@ -12,17 +12,44 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let active = true;
+
     async function completeSignIn() {
-      const code = new URLSearchParams(window.location.search).get("code");
-      if (!code) { setError("Link di accesso non valido."); return; }
+      const search = new URLSearchParams(window.location.search);
+      const code = search.get("code");
 
-      const { error: authError } = await exchangeAuthCode(code);
+      if (code) {
+        const { error: authError } = await exchangeAuthCode(code);
+        if (!active) return;
+        if (!authError) { router.replace("/"); return; }
+        setError("Link scaduto o già utilizzato. Torna all’accesso per riprovare.");
+        return;
+      }
+
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const accessToken = hash.get("access_token");
+      const refreshToken = hash.get("refresh_token");
+      if (!accessToken || !refreshToken) {
+        setError("Link di accesso non valido.");
+        return;
+      }
+
+      const { error: authError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
       if (!active) return;
-      if (!authError) { router.replace("/"); return; }
+      if (authError) {
+        setError("Link scaduto o già utilizzato. Torna all’accesso per riprovare.");
+        return;
+      }
 
-      setError("Link scaduto o già utilizzato. Torna all’accesso per riprovare.");
+      window.history.replaceState({}, "", window.location.pathname);
+      router.replace("/");
     }
-    void completeSignIn().catch(() => { if (active) setError("Connessione non riuscita. Riprova."); });
+
+    void completeSignIn().catch(() => {
+      if (active) setError("Connessione non riuscita. Riprova.");
+    });
     return () => { active = false; };
   }, [router]);
 
