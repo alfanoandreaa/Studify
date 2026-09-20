@@ -1,20 +1,42 @@
 # Studify authentication
 
-## Email-free signup
+Studify usa Supabase Auth con email e password.
 
-Registration accepts an email address as the login identifier but **does not send an email**. A server route creates the Auth user with `email_confirm: true`, then the browser signs in with the supplied password. No confirmation link, welcome message, farewell message, resend or password recovery email is offered. No Resend or SMTP site variables are required for these app flows.
+## Conferma email
 
-The Auth email is **not verified as owned by the registrant**. Someone could reserve another person's address. If the password is lost there is no self-service recovery path; an account with existing notes may become inaccessible. Do not treat the stored address as proof of identity. Supabase-wide Auth notification emails, if enabled in the project dashboard, are outside the application's control and must be disabled there to enforce an absolute no-email policy across the project.
+La registrazione passa da `/api/auth/register`, che valida input, Origin e rate limit, poi usa `supabase.auth.signUp()`. L'utente deve confermare la proprietà dell'indirizzo email prima di poter accedere.
 
-The public registration route checks origin, email format and password policy, uses the server-only Admin API, and has best-effort per-worker throttling. Configure platform-wide bot protection and rate limiting before public scale. The admin secret must never enter client code or source control.
+Il login non verifica più se un indirizzo esiste: credenziali errate restituiscono sempre il messaggio generico "Email o password errati". La registrazione può invece restituire `409` con "Questa email è già registrata.".
 
-## Data scope
+## Configurazione Supabase
 
-At inspection, public schema contains no application tables. Profile data is the Auth user. Notes/folders live in browser localStorage scoped to Auth user ID, not in Supabase. Deletion hard-deletes Auth and purges this browser's scoped and legacy app data. New accounts do not inherit unowned legacy notes. Other offline browsers, exports, provider logs and backups cannot be erased by browser code. Do not promise universal erasure. Cloud note persistence and multi-device erasure require a separate data migration.
+Nel dashboard Supabase:
 
-Account existence is deliberately disclosed as requested. Lookup runs only on the server via Admin API, returns one boolean, never user records. Per-worker burst protection is best-effort; configure edge-wide rate limiting before scaling.
+1. Vai in **Authentication → Providers → Email** e lascia abilitato l'accesso con email/password.
+2. Attiva **Confirm Email**. Se è disattivato, Studify considera la registrazione non configurata correttamente.
+3. Vai in **Authentication → URL Configuration**.
+4. Imposta **Site URL** sulla stessa origine configurata in `APP_ORIGIN`.
+5. Aggiungi tra i **Redirect URLs** `${APP_ORIGIN}/auth/callback`.
+6. Verifica che il template **Confirm sign up** sia attivo e che il progetto possa inviare le email di autenticazione.
+7. Configura nel deploy `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SECRET_KEY`. La secret key deve restare esclusivamente lato server.
 
-## Checks
+## Origin
 
-`node scripts/test-account-deletion.mjs`: authorization, confirmation and hard-delete checks with mocked Auth.
-`node scripts/test-auth-flows.mjs`: checks registration, duplicate handling, login and deletion with mocked Auth and verifies no email-sending API is called. No production accounts are touched.
+Tutte le route sensibili usano lo stesso helper `sameOrigin`, che confronta l'header `Origin` con `APP_ORIGIN`.
+
+## Rate limit
+
+La registrazione e l'API Gemini usano Cloudflare D1 tramite il binding `DB`. Il rate limit non usa memoria del Worker.
+
+Prima del deploy:
+
+1. Crea o scegli un database Cloudflare D1.
+2. Collega quel database al Worker con nome binding `DB`.
+3. Applica `db/rate-limit.sql` al database.
+4. Verifica che `.openai/hosting.json` continui a dichiarare `"d1": "DB"`.
+
+Se il binding o la tabella non sono disponibili, le route protette falliscono in modo chiuso con un errore temporaneo invece di saltare il rate limit.
+
+## Dati applicativi
+
+Quaderni e cartelle non sono salvati in Supabase. Restano nel `localStorage` del browser, separati per ID utente. La rinomina delle chiavi da `quaderno-ai-*` a `studify-*` include una migrazione automatica una tantum per non perdere i dati esistenti.
