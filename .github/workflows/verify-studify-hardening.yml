@@ -1,0 +1,32 @@
+name: Verify Studify hardening
+
+on:
+  push:
+    branches:
+      - studify-security-hardening
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm lint
+      - run: pnpm audit --prod
+      - run: pnpm build
+      - run: node scripts/test-auth-flows.mjs
+        env:
+          APP_ORIGIN: https://studify.test
+      - run: node scripts/test-account-deletion.mjs
+        env:
+          APP_ORIGIN: https://studify.test
