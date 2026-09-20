@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 
 export class RateLimitUnavailableError extends Error {}
 
@@ -16,7 +16,8 @@ export type RateLimitResult =
 type CountRow = { count: number };
 
 export function clientIpKey(request: Request) {
-  return request.headers.get("cf-connecting-ip")?.trim() || "missing-ip";
+  const value = request.headers.get("cf-connecting-ip")?.trim();
+  return value || null;
 }
 
 export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimitResult> {
@@ -45,6 +46,21 @@ export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimit
 
   try {
     const results = await db.batch(statements);
+
+    if (Math.random() < 0.01) {
+      const cutoff = now - 2 * 24 * 60 * 60;
+      waitUntil(
+        db.prepare("DELETE FROM rate_limits WHERE window_start < ?")
+          .bind(cutoff)
+          .run()
+          .catch((error) => {
+            console.warn("Studify rate limit cleanup failed", {
+              errorName: error instanceof Error ? error.name : "unknown",
+            });
+          }),
+      );
+    }
+
     for (let index = 0; index < rules.length; index++) {
       const rule = rules[index];
       const row = results[index * 2 + 1]?.results?.[0] as CountRow | undefined;
