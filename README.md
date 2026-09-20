@@ -50,6 +50,8 @@ Il rate limit usa il binding Cloudflare D1 `DB`, dichiarato in `.openai/hosting.
 
 Il database è usato solo per i contatori di rate limit. I quaderni e le cartelle restano locali al browser.
 
+Il rate limit usa finestre fisse: al confine tra due finestre un client può effettuare fino al doppio delle richieste previste dal limite nominale.
+
 ## Deploy
 
 Configura tutte le variabili d'ambiente nel provider, collega il binding D1 `DB`, applica lo schema del rate limit e pubblica il Worker con la pipeline Cloudflare/OpenAI Sites del progetto. `.openai/hosting.json` mantiene il `project_id` esistente.
