@@ -11,6 +11,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Inspect branch state
+        run: |
+          git fetch origin main studify-security-hardening --depth=100
+          git log --oneline -12
+          git diff --stat origin/main...HEAD
       - uses: pnpm/action-setup@v4
         with:
           version: 11.25.0
