@@ -39,4 +39,4 @@ Se il binding o la tabella non sono disponibili, le route protette falliscono in
 
 ## Dati applicativi
 
-Quaderni e cartelle non sono salvati in Supabase. Restano nel `localStorage` del browser, separati per ID utente. La rinomina delle chiavi da `quaderno-ai-*` a `studify-*` include una migrazione automatica una tantum per non perdere i dati esistenti.
+Quaderni e cartelle non sono salvati in Supabase. Restano nel `localStorage` del browser, separati per ID utente. La rinomina delle chiavi di archiviazione include una migrazione automatica una tantum per non perdere i dati esistenti.
