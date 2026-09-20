@@ -43,8 +43,10 @@ type StudyPack = {
 };
 type StudyFolder = { id: string; name: string };
 type ChatMessage = { role: "user" | "assistant"; text: string };
-const STORAGE_KEY = "quaderno-ai-packs-v1";
-const FOLDERS_KEY = "quaderno-ai-folders-v1";
+const STORAGE_KEY = "studify-packs-v1";
+const FOLDERS_KEY = "studify-folders-v1";
+const LEGACY_STORAGE_KEY = "quaderno-ai-packs-v1";
+const LEGACY_FOLDERS_KEY = "quaderno-ai-folders-v1";
 const AVATAR_KEY = "studify-avatar-v1";
 const SIDEBAR_KEY = "studify-sidebar-collapsed";
 type QuizSize = 5 | 10 | 20;
@@ -72,11 +74,24 @@ async function readApiResponse(response: Response) {
 }
 
 async function fetchAi(body: Record<string, unknown>) {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.access_token) throw new Error("Sessione scaduta. Accedi di nuovo.");
+
   return fetch("/api/gemini", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(body),
   });
+}
+
+function migrateLocalStorageKey(newKey: string, legacyKey: string) {
+  const legacyValue = localStorage.getItem(legacyKey);
+  if (legacyValue === null) return;
+  if (localStorage.getItem(newKey) === null) localStorage.setItem(newKey, legacyValue);
+  localStorage.removeItem(legacyKey);
 }
 
 function dateLabel(value: string) {
@@ -176,6 +191,8 @@ export default function Home() {
         if (error && error.status !== 401 && error.status !== 403 && error.code !== "user_not_found" && error.code !== "session_not_found") { toast.error("Servizio di accesso temporaneamente non disponibile. Riprova tra poco."); router.replace("/login"); return; }
         localStorage.removeItem(`${STORAGE_KEY}:${data.session.user.id}`);
         localStorage.removeItem(`${FOLDERS_KEY}:${data.session.user.id}`);
+        localStorage.removeItem(`${LEGACY_STORAGE_KEY}:${data.session.user.id}`);
+        localStorage.removeItem(`${LEGACY_FOLDERS_KEY}:${data.session.user.id}`);
         await supabase.auth.signOut({ scope: "local" });
         router.replace("/login"); return;
       }
@@ -200,6 +217,11 @@ export default function Home() {
     const userPacksKey = `${STORAGE_KEY}:${userId}`;
     const userFoldersKey = `${FOLDERS_KEY}:${userId}`;
     try {
+      migrateLocalStorageKey(STORAGE_KEY, LEGACY_STORAGE_KEY);
+      migrateLocalStorageKey(FOLDERS_KEY, LEGACY_FOLDERS_KEY);
+      migrateLocalStorageKey(userPacksKey, `${LEGACY_STORAGE_KEY}:${userId}`);
+      migrateLocalStorageKey(userFoldersKey, `${LEGACY_FOLDERS_KEY}:${userId}`);
+
       const savedPacks = localStorage.getItem(userPacksKey);
       const savedFolders = localStorage.getItem(userFoldersKey);
       // Unowned legacy data must never be imported into a different/new account.
@@ -376,6 +398,10 @@ export default function Home() {
         localStorage.removeItem(`${AVATAR_KEY}:${userId}`);
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(FOLDERS_KEY);
+        localStorage.removeItem(`${LEGACY_STORAGE_KEY}:${userId}`);
+        localStorage.removeItem(`${LEGACY_FOLDERS_KEY}:${userId}`);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        localStorage.removeItem(LEGACY_FOLDERS_KEY);
       } catch { cleared = false; }
       await supabase.auth.signOut({ scope: "local" }).catch(() => {});
       setPacks([]); setFolders([]); setActiveId(null); setAvatar(null); setAuthReady(false);
@@ -472,6 +498,7 @@ export default function Home() {
                   <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void chooseAvatar(event.target.files?.[0])} />
                   <div className="settings-actions"><Button variant="outline" onClick={() => avatarInput.current?.click()}>Scegli immagine</Button><Button variant="ghost" onClick={removeAvatar} disabled={!avatar}>Rimuovi immagine</Button></div>
                 </section>
+                <section className="settings-group"><h3>Dati</h3><small>Quaderni e cartelle sono salvati solo in questo browser e non vengono sincronizzati tra dispositivi.</small></section>
                 <section className="settings-group"><h3>Account</h3><Button variant="outline" onClick={() => void signOut()}><LogOut />Esci dall’account</Button><Button variant="destructive" onClick={() => { setSettingsOpen(false); setDeleteConfirmation(""); setDeleteAccountError(""); setDeleteAccountOpen(true); }}><Trash2 />Elimina account</Button></section>
               </div>
             </DialogContent>
