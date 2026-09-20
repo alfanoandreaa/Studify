@@ -6,6 +6,7 @@ import ts from "typescript";
 const origin = process.env.APP_ORIGIN || "https://studify.test";
 const users = new Map();
 let signupCalls = 0;
+let clientIp = "test-ip";
 const password = "Studify-Test-2026!";
 const email = "auth-test@example.invalid";
 
@@ -72,7 +73,7 @@ const registration = moduleAt("app/api/auth/register/route.ts", {
   "@/app/lib/password-policy": policy,
   "@/app/lib/rate-limit": {
     checkRateLimits: async () => ({ allowed: true }),
-    clientIpKey: () => "test-ip",
+    clientIpKey: () => clientIp,
     RateLimitUnavailableError,
   },
   "@/app/lib/same-origin": {
@@ -94,6 +95,12 @@ assert.equal(unsafe.status, 403);
 const weak = await registration.POST(registerRequest({ email, password: "1234" }));
 assert.equal(weak.status, 400);
 
+clientIp = null;
+const missingIp = await registration.POST(registerRequest({ email, password }));
+assert.equal(missingIp.status, 503);
+assert.match((await missingIp.json()).error, /temporaneamente non disponibile/);
+clientIp = "test-ip";
+
 const created = await registration.POST(registerRequest({ email, password }));
 assert.equal(created.status, 201);
 assert.deepEqual(await created.json(), { created: true, confirmationRequired: true });
@@ -108,4 +115,4 @@ assert.doesNotMatch(loginSource, /account-status|Account non trovato|Password no
 assert.match(loginSource, /Email o password errati/);
 assert.match(loginSource, /Controlla la tua email e conferma/);
 
-console.log("Auth flow checks passed: generic login errors, confirmation signup, duplicate 409, origin validation.");
+console.log("Auth flow checks passed: generic login errors, confirmation signup, duplicate 409, origin validation, missing client IP rejection.");
