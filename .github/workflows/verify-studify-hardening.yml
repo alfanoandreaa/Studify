@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - studify-security-hardening
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   verify:
@@ -11,11 +15,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
       - name: Inspect branch state
         run: |
-          git fetch origin main studify-security-hardening --depth=100
           git log --oneline -12
-          git diff --stat origin/main...HEAD
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=100
+            git diff --stat "origin/${{ github.base_ref }}...HEAD"
+          else
+            git show --stat --oneline --no-renames HEAD
+          fi
       - uses: pnpm/action-setup@v4
         with:
           version: 11.25.0
@@ -33,5 +43,8 @@ jobs:
         env:
           APP_ORIGIN: https://studify.test
       - run: node scripts/test-account-deletion.mjs
+        env:
+          APP_ORIGIN: https://studify.test
+      - run: node scripts/test-ai-api-security.mjs
         env:
           APP_ORIGIN: https://studify.test
